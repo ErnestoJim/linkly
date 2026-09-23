@@ -4,9 +4,8 @@
 api:
   image:
     repository: ghcr.io/ernestojim/linkly-api
-    tag: latest
-
+    tag: eabecac
 worker:
   image:
     repository: ghcr.io/ernestojim/linkly-worker
-    tag: latest
+    tag: eabecac
