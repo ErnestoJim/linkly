@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: linkly
+      POSTGRES_PASSWORD: linkly
+      POSTGRES_DB: linkly
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "linkly"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Emula la API de SQS en local. Las colas (+ DLQ) se declaran en
+  # deploy/elasticmq.conf, así no hace falta un paso manual de setup.
+  sqs:
+    image: softwaremill/elasticmq-native
+    ports:
+      - "9324:9324"
+    volumes:
+      - ./deploy/elasticmq.conf:/opt/elasticmq.conf:ro
+
+  api:
+    build:
+      context: apps/api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://linkly:linkly@postgres:5432/linkly
+      REDIS_URL: redis://redis:6379/0
+      SQS_QUEUE_URL: http://sqs:9324/000000000000/linkly-clicks
+      AWS_ENDPOINT_URL: http://sqs:9324
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      sqs:
+        condition: service_started
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: apps/worker
+    ports:
+      - "9000:9000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://linkly:linkly@postgres:5432/linkly
+      SQS_QUEUE_URL: http://sqs:9324/000000000000/linkly-clicks
+      AWS_ENDPOINT_URL: http://sqs:9324
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sqs:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

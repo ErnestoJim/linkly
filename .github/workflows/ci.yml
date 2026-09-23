@@ -1,0 +1,119 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, worker]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install .[dev]
+        working-directory: apps/${{ matrix.service }}
+      - run: ruff check .
+        working-directory: apps/${{ matrix.service }}
+      - run: mypy ${{ matrix.service == 'api' && 'app' || 'worker' }}
+        working-directory: apps/${{ matrix.service }}
+      - name: pytest
+        working-directory: apps/${{ matrix.service }}
+        run: |
+          if [ "${{ matrix.service }}" = "api" ]; then
+            pytest --ignore=tests/integration
+          else
+            pytest
+          fi
+
+  api-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: pip install .[dev]
+        working-directory: apps/api
+      - run: pytest tests/integration -m integration
+        working-directory: apps/api
+
+  terraform-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra/
+      - name: terraform validate
+        run: |
+          set -e
+          for dir in infra/bootstrap infra/envs/dev infra/envs/prod; do
+            echo "== $dir =="
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+      - uses: terraform-linters/setup-tflint@1cf010d3c7aef302051ccdb68c14c5dc2efa34ef # v6.3.1
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive --chdir=infra
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: "v4.3.0"
+      - run: helm lint deploy/helm/linkly
+      - name: install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+          sudo install kubeconform /usr/local/bin/kubeconform
+      - name: helm template | kubeconform
+        run: helm template deploy/helm/linkly | kubeconform -strict -summary
+
+  build-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, worker]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: apps/${{ matrix.service }}
+          tags: linkly-${{ matrix.service }}:scan
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy scan (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: linkly-${{ matrix.service }}:scan
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1

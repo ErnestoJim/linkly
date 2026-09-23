@@ -1,0 +1,16 @@
+api:
+  image:
+    repository: linkly-api
+    tag: latest
+  replicaCount: 2
+  port: 8000
+  resources: {}
+
+worker:
+  image:
+    repository: linkly-worker
+    tag: latest
+  replicaCount: 1
+  resources: {}
+
+env: {}

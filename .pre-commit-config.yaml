@@ -1,0 +1,40 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.96.1
+    hooks:
+      - id: terraform_fmt
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.19.3
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: mypy-api
+        name: mypy (apps/api)
+        entry: bash -c 'cd apps/api && mypy app'
+        language: system
+        files: ^apps/api/
+        pass_filenames: false
+      - id: mypy-worker
+        name: mypy (apps/worker)
+        entry: bash -c 'cd apps/worker && mypy worker'
+        language: system
+        files: ^apps/worker/
+        pass_filenames: false

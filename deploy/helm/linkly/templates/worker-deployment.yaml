@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "linkly.fullname" . }}-worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "linkly.fullname" . }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "linkly.fullname" . }}-worker
+    spec:
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          resources: {{ toYaml .Values.worker.resources | nindent 12 }}

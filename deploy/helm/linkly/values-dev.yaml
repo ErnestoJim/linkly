@@ -1,0 +1,12 @@
+# Sobreescribe la imagen para el entorno dev. El tag lo actualiza
+# automáticamente .github/workflows/release.yml en cada push a main
+# (commit directo a este archivo) — Argo CD detecta el cambio y sincroniza.
+api:
+  image:
+    repository: ghcr.io/ernestojim/linkly-api
+    tag: latest
+
+worker:
+  image:
+    repository: ghcr.io/ernestojim/linkly-worker
+    tag: latest
