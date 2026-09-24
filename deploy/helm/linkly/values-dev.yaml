@@ -4,11 +4,11 @@
 api:
   image:
     repository: ghcr.io/ernestojim/linkly-api
-    tag: 7dd2dbd
+    tag: 5bfce39
 worker:
   image:
     repository: ghcr.io/ernestojim/linkly-worker
-    tag: 7dd2dbd
+    tag: 5bfce39
 # Postgres real (RDS) y cola real (SQS) — no viven en el cluster, así que
 # postgresql.enabled / redis.enabled / elasticmq.enabled se quedan en
 # `false` (el default de values.yaml).
