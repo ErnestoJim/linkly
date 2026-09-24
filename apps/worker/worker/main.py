@@ -45,7 +45,9 @@ def run() -> None:
                 WaitTimeSeconds=settings.wait_time_seconds,
             )
         except EndpointConnectionError:
-            logger.warning("SQS endpoint not reachable yet, retrying in %ds", _RETRY_BACKOFF_SECONDS)
+            logger.warning(
+                "SQS endpoint not reachable yet, retrying in %ds", _RETRY_BACKOFF_SECONDS
+            )
             worker_errors_total.inc()
             _shutdown.wait(_RETRY_BACKOFF_SECONDS)
             continue

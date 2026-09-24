@@ -22,9 +22,7 @@ class Click(Base):
     __table_args__ = (Index("ix_clicks_code_clicked_at", "code", "clicked_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    code: Mapped[str] = mapped_column(
-        String(16), ForeignKey("links.code"), nullable=False
-    )
+    code: Mapped[str] = mapped_column(String(16), ForeignKey("links.code"), nullable=False)
     clicked_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

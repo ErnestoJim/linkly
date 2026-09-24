@@ -12,13 +12,13 @@ class FakeSqsClient:
         self.deleted.append((QueueUrl, Entries))
 
 
-def _message(message_id, code="abc123", ts="2026-09-23T10:00:00+00:00", user_agent="ua", referer="ref"):
+def _message(
+    message_id, code="abc123", ts="2026-09-23T10:00:00+00:00", user_agent="ua", referer="ref"
+):
     return {
         "MessageId": message_id,
         "ReceiptHandle": f"handle-{message_id}",
-        "Body": json.dumps(
-            {"code": code, "ts": ts, "user_agent": user_agent, "referer": referer}
-        ),
+        "Body": json.dumps({"code": code, "ts": ts, "user_agent": user_agent, "referer": referer}),
     }
 
 
