@@ -15,15 +15,18 @@ worker:
     tag: latest
   replicaCount: 2
 
-# Placeholders — ver el mismo comentario en values-dev.yaml.
+# Placeholders — ver el mismo comentario (RDS/SQS reales, Pod Identity
+# en vez de claves estáticas, sin módulo de Redis todavía) en
+# values-dev.yaml.
 ingress:
   host: linkly.example.com
 
 env:
+  AWS_REGION: eu-west-1
   AWS_ENDPOINT_URL: ""
   BASE_URL: https://linkly.example.com
 
 secretEnv:
-  DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.rds.amazonaws.com:5432/linkly"
+  DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.eu-west-1.rds.amazonaws.com:5432/linkly"
   REDIS_URL: "redis://REPLACE_ME.cache.amazonaws.com:6379/0"
-  SQS_QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/REPLACE_ME/linkly-clicks"
+  SQS_QUEUE_URL: "https://sqs.eu-west-1.amazonaws.com/REPLACE_ME/linkly-prod-clicks"

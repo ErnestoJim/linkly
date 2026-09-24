@@ -219,6 +219,9 @@ __marimo__/
 
 # Terraform
 **/.terraform/
+# No la comiteamos: mezclaría hashes de plataforma (macOS local vs. el
+# linux_amd64 de CI) y terraform_fmt/validate no la necesitan.
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 crash.log

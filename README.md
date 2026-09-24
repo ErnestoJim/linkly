@@ -13,8 +13,8 @@ deploy/
   helm/linkly/   # Chart de la aplicación
   argocd/        # Definiciones de Argo CD (dev/prod)
 infra/
-  bootstrap/     # Bucket S3 + tabla DynamoDB para el estado de Terraform
-  modules/       # network, eks, rds, sqs, iam
+  bootstrap/     # Bucket S3 para el estado de Terraform (locking nativo, sin DynamoDB)
+  modules/       # network, eks, data (RDS+SQS), iam (EKS Pod Identity)
   envs/          # dev, prod
 observability/   # Dashboards y reglas de alerta
 loadtest/        # Scripts de carga (k6)
@@ -149,8 +149,58 @@ capabilities: {drop: ["ALL"]}}`.
 `values.yaml` trae lo común; `values-local.yaml` añade Postgres/Redis
 (subcharts de Bitnami, `helm dependency build` los descarga) y ElasticMQ
 (plantillas propias, no hay chart oficial) dentro del cluster;
-`values-dev.yaml`/`values-prod.yaml` apuntan a RDS/SQS reales — hoy son
-placeholders (`REPLACE_ME`) hasta que `infra/modules/{rds,sqs}` exista.
+`values-dev.yaml`/`values-prod.yaml` apuntan a RDS/SQS reales en AWS (ver
+abajo) — el `DATABASE_URL`/`SQS_QUEUE_URL` siguen siendo placeholders
+(`REPLACE_ME`) hasta rellenarlos con los outputs de Terraform.
+
+## Infraestructura AWS (Terraform)
+
+> **Aviso de coste**: con todo levantado (EKS + nodos + RDS) el gasto
+> ronda unos pocos dólares al día — solo el cluster EKS ya son
+> ~0,10 $/h. Levántalo para trabajar o para la demo y **destrúyelo el
+> mismo día** (`terraform destroy`).
+
+`infra/modules` envuelve los módulos de la comunidad
+(`terraform-aws-modules/{vpc,eks}/aws`) en los nuestros, como se hace en
+empresas reales en vez de reinventar VPC/EKS desde cero:
+
+| Módulo | Qué monta |
+| --- | --- |
+| `network` | VPC (`terraform-aws-modules/vpc/aws`), 2 AZs, subredes públicas (nodos) + privadas (solo RDS). **Sin NAT Gateway** — ver [ADR-0002](docs/adr/0002-no-nat-gateway.md) |
+| `eks` | Cluster EKS (`terraform-aws-modules/eks/aws`), K8s 1.35 (la penúltima en soporte estándar — la más probada), endpoint público restringido a tu IP, node group spot (2×`t3.medium`/`t3a.medium`), addons `vpc-cni`/`coredns`/`kube-proxy`/`eks-pod-identity-agent` |
+| `data` | RDS Postgres `db.t4g.micro` en subredes privadas (SG solo acepta tráfico desde los nodos), contraseña gestionada por AWS Secrets Manager; cola SQS `<env>-clicks` + su DLQ (`maxReceiveCount=5`) |
+| `iam` | Dos roles vía **EKS Pod Identity** (sin claves de larga duración): uno para `linkly-worker` con `sqs:ReceiveMessage`/`sqs:DeleteMessage`, otro para `linkly-api` con `sqs:SendMessage` — asociados a esos ServiceAccounts exactos del chart de Helm |
+
+### Uso
+
+```bash
+cd infra/bootstrap
+terraform init && terraform apply   # una sola vez; anota el output bucket_name
+
+# copia ese bucket_name en infra/envs/dev/backend.tf (reemplaza <ACCOUNT_ID>)
+cd ../envs/dev
+terraform init
+terraform plan -out=tfplan -var 'allowed_public_access_cidrs=["<TU_IP>/32"]'
+terraform apply tfplan
+
+aws eks update-kubeconfig --name linkly-dev --region eu-west-1
+kubectl get nodes
+
+# ... demo (make kind-* no aplica aquí; despliega con values-dev.yaml
+# una vez rellenados los placeholders de DATABASE_URL/SQS_QUEUE_URL) ...
+
+terraform destroy   # siempre, al terminar
+```
+
+`infra/envs/dev/backend.tf` lleva el bucket en texto plano a propósito
+— los bloques `backend` de Terraform no admiten variables ni data
+sources. `infra/bootstrap` no usa `region`/`state_bucket_name` fijos:
+calcula el nombre del bucket con tu Account ID (`aws_caller_identity`)
+para que sea único sin inventarse un sufijo.
+
+No hay módulo de Terraform para Redis/ElastiCache todavía — es un hueco
+conocido, `REDIS_URL` en `values-dev.yaml`/`values-prod.yaml` se queda
+como placeholder.
 
 ## CI/CD
 

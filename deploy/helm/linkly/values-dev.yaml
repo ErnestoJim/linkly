@@ -9,21 +9,33 @@ worker:
   image:
     repository: ghcr.io/ernestojim/linkly-worker
     tag: 5bfce39
+
 # Postgres real (RDS) y cola real (SQS) — no viven en el cluster, así que
 # postgresql.enabled / redis.enabled / elasticmq.enabled se quedan en
-# `false` (el default de values.yaml).
+# `false` (el default de values.yaml). Los provisiona infra/envs/dev
+# (Fase 6): DATABASE_URL sale de `terraform output db_address` +
+# `db_secret_arn` (Secrets Manager, la contraseña la gestiona AWS) y
+# SQS_QUEUE_URL de `terraform output sqs_queue_url`.
 #
-# TODO(infra/modules/rds, infra/modules/sqs): estos son placeholders.
-# Cuando esos módulos de Terraform existan, DATABASE_URL y SQS_QUEUE_URL
-# deberían venir de un Secret externo (p.ej. External Secrets Operator
-# leyendo AWS Secrets Manager con los outputs de Terraform), no en texto
+# No hace falta AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY aquí: los pods
+# de api/worker reciben credenciales de AWS vía EKS Pod Identity
+# (infra/modules/iam), no vía claves estáticas.
+#
+# TODO: no hay ningún módulo de Terraform para Redis/ElastiCache todavía
+# — REDIS_URL se queda como placeholder hasta que exista.
+#
+# TODO: estos valores deberían venir de un Secret externo (p.ej.
+# External Secrets Operator leyendo Secrets Manager) en vez de texto
 # plano en este archivo.
 ingress:
   host: dev.linkly.example.com
+
 env:
+  AWS_REGION: eu-west-1
   AWS_ENDPOINT_URL: ""
   BASE_URL: https://dev.linkly.example.com
+
 secretEnv:
-  DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.rds.amazonaws.com:5432/linkly"
+  DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.eu-west-1.rds.amazonaws.com:5432/linkly"
   REDIS_URL: "redis://REPLACE_ME.cache.amazonaws.com:6379/0"
-  SQS_QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/REPLACE_ME/linkly-clicks"
+  SQS_QUEUE_URL: "https://sqs.eu-west-1.amazonaws.com/REPLACE_ME/linkly-dev-clicks"
