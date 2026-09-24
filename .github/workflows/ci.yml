@@ -58,7 +58,7 @@ jobs:
       - name: terraform validate
         run: |
           set -e
-          for dir in infra/bootstrap infra/envs/dev infra/envs/prod; do
+          for dir in infra/bootstrap infra/github-oidc infra/envs/dev infra/envs/prod; do
             echo "== $dir =="
             terraform -chdir="$dir" init -backend=false -input=false
             terraform -chdir="$dir" validate

@@ -14,6 +14,7 @@ deploy/
   argocd/        # Definiciones de Argo CD (dev/prod)
 infra/
   bootstrap/     # Bucket S3 para el estado de Terraform (locking nativo, sin DynamoDB)
+  github-oidc/   # OIDC provider + rol que asume GitHub Actions (sin access keys)
   modules/       # network, eks, data (RDS+SQS), iam (EKS Pod Identity)
   envs/          # dev, prod
 observability/   # Dashboards y reglas de alerta
@@ -202,6 +203,43 @@ No hay módulo de Terraform para Redis/ElastiCache todavía — es un hueco
 conocido, `REDIS_URL` en `values-dev.yaml`/`values-prod.yaml` se queda
 como placeholder.
 
+### GitHub Actions sin access keys (OIDC)
+
+`infra/github-oidc` monta el trust entre GitHub Actions y AWS por OIDC
+— ningún workflow guarda una access key de AWS. Se corre una vez, a
+mano, después de `infra/bootstrap`:
+
+```bash
+cd infra/github-oidc
+terraform init
+terraform apply -var 'state_bucket_name=<bucket de infra/bootstrap>'
+```
+
+Copia el `role_arn` que devuelve a un **repository variable** (no
+secret — el ARN de un rol no es sensible) llamado
+`AWS_GITHUB_ACTIONS_ROLE_ARN`, en *Settings → Secrets and variables →
+Actions → Variables*. A partir de ahí, [`terraform.yml`](.github/workflows/terraform.yml):
+
+- En cada PR que toque `infra/`: hace `terraform plan` para `dev` y
+  `prod` y lo publica (actualizándolo, no duplicándolo) como comentario
+  en el PR.
+- El `apply` **solo** se dispara a mano desde la pestaña Actions
+  (`workflow_dispatch`, eligiendo entorno y, opcionalmente, tu IP para
+  `allowed_public_access_cidrs`) — nunca por un push o PR normal, así
+  no se crea infraestructura con coste por accidente.
+
+La trust policy del rol acepta dos patrones de `sub`, no solo el del
+enunciado original: uno para el `plan` en pull requests
+(`repo:<owner>/linkly:pull_request`, sin importar la rama) y otro para
+el `apply` manual (`repo:<owner>/linkly:ref:refs/heads/main`) — con
+solo el segundo, el plan en PRs nunca habría podido autenticarse.
+
+Los permisos del rol son deliberadamente amplios (`ec2:*`, `eks:*`,
+`rds:*`, `sqs:*`, `iam:*` sobre `*`, más S3 acotado al bucket de
+estado) — acotarlos al mínimo real es trabajo de iterar contra
+`AccessDenied`, no algo razonable de adivinar de antemano para una
+demo. Es el primer sitio a estrechar para un uso serio.
+
 ## CI/CD
 
 **[`ci.yml`](.github/workflows/ci.yml)** corre en cada PR y en cada push a
@@ -224,6 +262,11 @@ de GitHub Actions), y luego actualiza `deploy/helm/linkly/values-dev.yaml`
 con ese tag y hace commit directo a `main` (con `[skip ci]` para no
 disparar el pipeline en bucle) — así Argo CD detecta el cambio y sincroniza
 dev automáticamente (Fase 8).
+
+**[`terraform.yml`](.github/workflows/terraform.yml)**: `plan` en cada
+PR que toca `infra/` (comentado en el PR) + `apply` manual por
+`workflow_dispatch`. Se autentica contra AWS por OIDC, sin access keys
+— ver [la sección de arriba](#github-actions-sin-access-keys-oidc).
 
 Cada workflow declara `permissions:` mínimos por job, y todas las actions
 de terceros están fijadas a un commit SHA (no a un tag).
