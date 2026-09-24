@@ -1,20 +1,59 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "linkly.fullname" . }}-api
+  name: {{ include "linkly.api.fullname" . }}
+  labels:
+    {{- include "linkly.api.labels" . | nindent 4 }}
 spec:
+  {{- /* Cuando el HPA está activo, no fijamos replicas aquí: si no, cada
+  `helm upgrade` pelearía con el HPA por el número de réplicas. */}}
+  {{- if not .Values.api.autoscaling.enabled }}
   replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
-      app: {{ include "linkly.fullname" . }}-api
+      {{- include "linkly.api.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "linkly.fullname" . }}-api
+        {{- include "linkly.api.labels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "linkly.api.fullname" . }}
       containers:
         - name: api
           image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # El Job de migraciones (hook pre-install,pre-upgrade) ya corrió
+          # `alembic upgrade head`; saltamos el entrypoint de la imagen
+          # para no repetirlo en cada réplica al arrancar.
+          command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "{{ .Values.api.port }}"]
           ports:
-            - containerPort: {{ .Values.api.port }}
-          resources: {{ toYaml .Values.api.resources | nindent 12 }}
+            - name: http
+              containerPort: {{ .Values.api.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "linkly.fullname" . }}-env
+            - secretRef:
+                name: {{ include "linkly.fullname" . }}-secret
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "linkly.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

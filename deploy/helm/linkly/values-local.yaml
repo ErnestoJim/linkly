@@ -1,0 +1,49 @@
+# Para kind: Postgres, Redis y SQS (ElasticMQ) viven dentro del propio
+# cluster. Uso:
+#   helm dependency build deploy/helm/linkly
+#   helm upgrade --install linkly deploy/helm/linkly \
+#     -f deploy/helm/linkly/values-local.yaml -n linkly --create-namespace
+
+api:
+  # kind no trae metrics-server instalado por defecto, así que el HPA no
+  # tendría métricas de CPU con las que escalar. Para que "borra un pod y
+  # el servicio no debería caer" funcione de forma fiable, fijamos 2
+  # réplicas directamente en vez de depender del HPA aquí.
+  autoscaling:
+    enabled: false
+  replicaCount: 2
+
+ingress:
+  # Sin host: la regla hace match con cualquier Host, así
+  # `curl http://localhost/api/links` (sin -H Host) funciona tal cual.
+  host: ""
+
+postgresql:
+  enabled: true
+  auth:
+    username: linkly
+    password: linkly
+    database: linkly
+  # Sin override de image.tag: Bitnami no publica tags "pelados" como
+  # bitnami/postgresql:16 (solo versiones completas, p.ej. 18.x-debian-*),
+  # así que usamos el default del chart.
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+
+elasticmq:
+  enabled: true
+
+env:
+  AWS_ENDPOINT_URL: http://linkly-elasticmq:9324
+  BASE_URL: http://linkly.local
+
+secretEnv:
+  DATABASE_URL: postgresql+psycopg://linkly:linkly@linkly-postgresql:5432/linkly
+  REDIS_URL: redis://linkly-redis-master:6379/0
+  SQS_QUEUE_URL: http://linkly-elasticmq:9324/000000000000/linkly-clicks
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test

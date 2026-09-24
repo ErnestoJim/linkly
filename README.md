@@ -61,14 +61,14 @@ make up               # Levanta api + worker + postgres + redis + sqs (ElasticMQ
 make test              # Tests unitarios de api y worker (no requieren Docker)
 make test-integration   # Tests de integración con Postgres/Redis reales (testcontainers, requiere Docker)
 make migrate            # Aplica las migraciones de Alembic contra DATABASE_URL (fuera de Docker)
-make kind-up             # Crea un cluster local con kind para probar el chart de Helm
 ```
 
 SQS se simula en local con [ElasticMQ](https://github.com/softwaremill/elasticmq)
 (`softwaremill/elasticmq-native`); la cola `linkly-clicks` y su DLQ
 (`linkly-clicks-dlq`, `maxReceiveCount=5`) se declaran en
-[`deploy/elasticmq.conf`](deploy/elasticmq.conf), así que no hace falta
-ningún paso manual de setup.
+[`deploy/helm/linkly/files/elasticmq.conf`](deploy/helm/linkly/files/elasticmq.conf)
+(el mismo archivo que usa el chart de Helm para `values-local.yaml`), así
+que no hace falta ningún paso manual de setup.
 
 Copia `apps/api/.env.example` / `apps/worker/.env.example` a `.env` para
 correr cada servicio fuera de Docker Compose. Toda la configuración se lee
@@ -94,6 +94,64 @@ SQS; el worker lo consume y lo inserta en Postgres, así que el contador de
 
 Ver `make help` para todos los comandos disponibles.
 
+## Kubernetes (kind)
+
+Todo se prueba primero en [kind](https://kind.sigs.k8s.io/) antes que en
+EKS: si funciona ahí, en EKS casi solo cambian los valores
+(`values-dev.yaml` en vez de `values-local.yaml`).
+
+```bash
+make kind-up       # Cluster de 3 nodos (control-plane + 2 workers)
+make kind-ingress   # Instala ingress-nginx anclado al control-plane
+make kind-images    # Construye api/worker y las carga en el cluster (tag :kind)
+make kind-deploy    # helm upgrade --install con values-local.yaml (Postgres/Redis/SQS en el cluster)
+kubectl get pods -n linkly -w
+```
+
+`make kind-ingress` no es un `helm install` a pelo: sin
+`controller.hostPort.enabled=true` + el `nodeSelector`/`tolerations` hacia
+el control-plane, el controller podría acabar en un worker (que no tiene
+los `extraPortMappings` de [`deploy/kind-config.yaml`](deploy/kind-config.yaml))
+y `curl http://localhost` no llegaría a ningún sitio.
+
+**Punto de control:**
+
+```bash
+curl -X POST http://localhost/api/links -H 'Content-Type: application/json' \
+  -d '{"url":"https://github.com"}'
+curl -i http://localhost/<code>   # 302 → https://github.com
+```
+
+**Pruebas de resiliencia** (documentadas aquí tal como pide la Fase 5):
+
+- **Borra un pod de la API** (`kubectl delete pod -n linkly $(kubectl get pods -n linkly -l app.kubernetes.io/component=api -o jsonpath='{.items[0].metadata.name}')`): con 2 réplicas + `Service`, el resto de peticiones a `http://localhost/...` no deberían fallar — Kubernetes saca el pod del Service en cuanto deja de responder al `readinessProbe`. Verificado en esta máquina: 15 `POST /api/links` seguidos mientras se borraba un pod, **0 fallos** (todos `201`).
+- **Para el worker** (`kubectl scale deploy linkly-worker -n linkly --replicas=0`): los clics se siguen aceptando (la API solo publica en SQS, no depende del worker para el 302) y se acumulan en la cola de ElasticMQ; al volver a escalar a 1, se procesan y aparecen en `/api/links/{code}/stats`. Verificado: con el worker en 0, `total_clicks` se queda fijo pese a más redirecciones; al volver a `--replicas=1`, sube de golpe reflejando todo lo acumulado.
+
+### Qué incluye el chart (`deploy/helm/linkly`)
+
+| Recurso | Detalle |
+| --- | --- |
+| Deployment API | 2 réplicas (o gestionadas por el HPA), `readinessProbe` en `/readyz`, `livenessProbe` en `/healthz` |
+| Deployment worker | Sin Service, `terminationGracePeriodSeconds: 30` |
+| Service + Ingress | Solo para la API |
+| HorizontalPodAutoscaler | CPU 70 %, 2–6 réplicas (desactivado en `values-local.yaml`: kind no trae `metrics-server`) |
+| PodDisruptionBudget | `minAvailable: 1` en la API |
+| ServiceAccount | Uno por servicio (api, worker) |
+| Job de migraciones | Hook `post-install,pre-upgrade` (**no** `pre-install`: con Postgres como subchart en el mismo release, `pre-install` corre antes de que Postgres exista siquiera — ver comentario en `migration-job.yaml`). Con `--wait`, Helm no devuelve el control hasta que termina, así que en la práctica sigue siendo "migra antes de que el pod de turno reciba tráfico" |
+| ServiceMonitor | `serviceMonitor.enabled: false` por defecto; se activa en la Fase 9 |
+
+Todos los contenedores propios del chart (api, worker, job de
+migraciones) corren con `requests: {cpu: 50m, memory: 128Mi}`,
+`limits: {memory: 256Mi}` y `securityContext: {runAsNonRoot: true,
+readOnlyRootFilesystem: true, allowPrivilegeEscalation: false,
+capabilities: {drop: ["ALL"]}}`.
+
+`values.yaml` trae lo común; `values-local.yaml` añade Postgres/Redis
+(subcharts de Bitnami, `helm dependency build` los descarga) y ElasticMQ
+(plantillas propias, no hay chart oficial) dentro del cluster;
+`values-dev.yaml`/`values-prod.yaml` apuntan a RDS/SQS reales — hoy son
+placeholders (`REPLACE_ME`) hasta que `infra/modules/{rds,sqs}` exista.
+
 ## CI/CD
 
 **[`ci.yml`](.github/workflows/ci.yml)** corre en cada PR y en cada push a
@@ -104,7 +162,8 @@ Ver `make help` para todos los comandos disponibles.
 | `lint-test` (matrix api/worker) | `ruff`, `mypy`, `pytest` |
 | `api-integration` | tests de integración (Postgres/Redis reales) |
 | `terraform-check` | `terraform fmt -check`, `terraform validate` (sin backend) y `tflint` sobre `infra/` |
-| `helm-lint` | `helm lint` + `helm template` validado con `kubeconform` |
+| `helm-lint` | `helm lint` + `helm template` validado con `kubeconform`, para las 4 combinaciones de values |
+| `kind-smoke-test` | levanta un cluster kind real, despliega el chart y hace `curl` contra `/api/links` y la redirección |
 | `build-scan` (matrix api/worker) | construye ambas imágenes y las escanea con Trivy — falla si hay `CRITICAL` |
 | `pre-commit` | los mismos hooks que corren localmente |
 

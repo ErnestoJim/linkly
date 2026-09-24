@@ -1,0 +1,11 @@
+{{- if .Values.elasticmq.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "linkly.elasticmq.fullname" . }}
+  labels:
+    {{- include "linkly.elasticmq.labels" . | nindent 4 }}
+data:
+  elasticmq.conf: |-
+{{ .Files.Get "files/elasticmq.conf" | indent 4 }}
+{{- end }}

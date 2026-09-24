@@ -1,0 +1,55 @@
+{{- if .Values.migrationJob.enabled }}
+{{- /*
+`pre-install` no funciona cuando Postgres vive en el mismo release
+(values-local.yaml, subchart de Bitnami): los hooks pre-install corren
+ANTES de que exista cualquier recurso normal del chart, Postgres
+incluido, así que la conexión fallaría siempre en la primera instalación
+("failed to resolve host"). Usamos `post-install` en su lugar: con
+`--wait` (que usan tanto `make kind-deploy` como Argo CD por defecto),
+Helm espera a que Postgres/Deployments estén Ready antes de correr los
+hooks post-install, así que para entonces la BD ya es alcanzable. Para
+upgrades seguimos usando `pre-upgrade` (migra antes de que el código
+nuevo reciba tráfico), donde sí existen los recursos de la revisión
+anterior.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Nombre único por revisión: un hook `before-hook-creation` no basta
+  # solo, ayuda a que se pueda ver el historial de migraciones con
+  # `kubectl get jobs`.
+  name: {{ include "linkly.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "linkly.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "linkly.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "linkly.api.fullname" . }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "linkly.fullname" . }}-env
+            - secretRef:
+                name: {{ include "linkly.fullname" . }}-secret
+          securityContext:
+            {{- include "linkly.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

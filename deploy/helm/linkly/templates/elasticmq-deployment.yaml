@@ -1,0 +1,39 @@
+{{- if .Values.elasticmq.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "linkly.elasticmq.fullname" . }}
+  labels:
+    {{- include "linkly.elasticmq.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "linkly.elasticmq.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "linkly.elasticmq.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: elasticmq
+          # Imagen de terceros: no forzamos runAsNonRoot/readOnlyRootFilesystem
+          # porque no controlamos sus requisitos de arranque, a diferencia de
+          # api/worker/migrate.
+          image: softwaremill/elasticmq-native
+          ports:
+            - name: sqs
+              containerPort: 9324
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: config
+              mountPath: /opt/elasticmq.conf
+              subPath: elasticmq.conf
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "linkly.elasticmq.fullname" . }}
+{{- end }}

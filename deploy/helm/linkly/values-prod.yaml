@@ -1,5 +1,29 @@
 api:
-  replicaCount: 3
+  image:
+    repository: ghcr.io/ernestojim/linkly-api
+    # En prod el tag se fija a mano (o vía un proceso de promoción desde
+    # dev), nunca se auto-bumpea como en values-dev.yaml.
+    tag: latest
+  # El HPA está activo (hereda de values.yaml); esto solo sube el piso.
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 10
 
 worker:
+  image:
+    repository: ghcr.io/ernestojim/linkly-worker
+    tag: latest
   replicaCount: 2
+
+# Placeholders — ver el mismo comentario en values-dev.yaml.
+ingress:
+  host: linkly.example.com
+
+env:
+  AWS_ENDPOINT_URL: ""
+  BASE_URL: https://linkly.example.com
+
+secretEnv:
+  DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.rds.amazonaws.com:5432/linkly"
+  REDIS_URL: "redis://REPLACE_ME.cache.amazonaws.com:6379/0"
+  SQS_QUEUE_URL: "https://sqs.us-east-1.amazonaws.com/REPLACE_ME/linkly-clicks"

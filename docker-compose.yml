@@ -21,13 +21,15 @@ services:
       - "6379:6379"
 
   # Emula la API de SQS en local. Las colas (+ DLQ) se declaran en
-  # deploy/elasticmq.conf, así no hace falta un paso manual de setup.
+  # deploy/helm/linkly/files/elasticmq.conf (mismo archivo que usa el
+  # chart de Helm para values-local.yaml), así no hace falta un paso
+  # manual de setup.
   sqs:
     image: softwaremill/elasticmq-native
     ports:
       - "9324:9324"
     volumes:
-      - ./deploy/elasticmq.conf:/opt/elasticmq.conf:ro
+      - ./deploy/helm/linkly/files/elasticmq.conf:/opt/elasticmq.conf:ro
 
   api:
     build:

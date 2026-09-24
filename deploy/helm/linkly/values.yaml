@@ -1,16 +1,80 @@
+# Valores comunes a todos los entornos. values-local.yaml y values-dev.yaml
+# los sobreescriben (ver deploy/helm/linkly/README.md).
+
+image:
+  pullPolicy: IfNotPresent
+
 api:
   image:
     repository: linkly-api
     tag: latest
-  replicaCount: 2
   port: 8000
-  resources: {}
+  replicaCount: 2
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+  podDisruptionBudget:
+    minAvailable: 1
+  serviceAccount:
+    create: true
+    annotations: {}
 
 worker:
   image:
     repository: linkly-worker
     tag: latest
   replicaCount: 1
-  resources: {}
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 256Mi }
+  terminationGracePeriodSeconds: 30
+  serviceAccount:
+    create: true
+    annotations: {}
 
-env: {}
+ingress:
+  enabled: true
+  className: nginx
+  host: linkly.local
+  annotations: {}
+
+# Job de Helm (hook pre-install,pre-upgrade) que corre `alembic upgrade
+# head` con la imagen de la API antes de desplegar los pods nuevos.
+migrationJob:
+  enabled: true
+
+# Desactivado por defecto; se activa en Fase 9 cuando el Prometheus
+# Operator esté instalado en el cluster.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+# Variables de entorno no sensibles -> ConfigMap, montadas con envFrom en
+# api, worker y el job de migraciones.
+env:
+  AWS_REGION: us-east-1
+  CACHE_TTL_SECONDS: "3600"
+
+# Variables sensibles (connection strings, credenciales) -> Secret. En
+# values-dev.yaml estas deberían venir de un Secret externo (p.ej. via
+# External Secrets Operator + AWS Secrets Manager), no en texto plano.
+secretEnv: {}
+
+# PostgreSQL y Redis en el propio cluster (subcharts de Bitnami),
+# apagados por defecto. Solo values-local.yaml los activa.
+postgresql:
+  enabled: false
+
+redis:
+  enabled: false
+
+# Emulador de SQS en el propio cluster (plantillas propias de este chart,
+# no hay chart oficial de ElasticMQ). Solo values-local.yaml lo activa.
+elasticmq:
+  enabled: false

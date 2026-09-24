@@ -1,0 +1,15 @@
+{{- if .Values.elasticmq.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "linkly.elasticmq.fullname" . }}
+  labels:
+    {{- include "linkly.elasticmq.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "linkly.elasticmq.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: sqs
+      port: 9324
+      targetPort: sqs
+{{- end }}

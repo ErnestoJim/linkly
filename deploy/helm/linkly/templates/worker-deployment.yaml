@@ -1,18 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "linkly.fullname" . }}-worker
+  name: {{ include "linkly.worker.fullname" . }}
+  labels:
+    {{- include "linkly.worker.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.worker.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "linkly.fullname" . }}-worker
+      {{- include "linkly.worker.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        app: {{ include "linkly.fullname" . }}-worker
+        {{- include "linkly.worker.labels" . | nindent 8 }}
     spec:
+      serviceAccountName: {{ include "linkly.worker.fullname" . }}
+      # Kubernetes manda SIGTERM y espera esto antes de SIGKILL: le da
+      # tiempo al worker a terminar el batch en curso y hacer commit antes
+      # de que el pod desaparezca (ver _handle_sigterm en worker/main.py).
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
       containers:
         - name: worker
           image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
-          resources: {{ toYaml .Values.worker.resources | nindent 12 }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: {{ include "linkly.fullname" . }}-env
+            - secretRef:
+                name: {{ include "linkly.fullname" . }}-secret
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- include "linkly.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

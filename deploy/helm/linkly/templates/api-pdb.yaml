@@ -1,0 +1,13 @@
+{{- if .Values.api.podDisruptionBudget }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "linkly.api.fullname" . }}
+  labels:
+    {{- include "linkly.api.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.api.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "linkly.api.selectorLabels" . | nindent 6 }}
+{{- end }}

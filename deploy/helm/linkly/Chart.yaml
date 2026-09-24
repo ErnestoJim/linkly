@@ -4,3 +4,15 @@ description: Helm chart for the Linkly URL shortener (api + worker)
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+
+# Solo para desarrollo local (values-local.yaml); en dev/prod Postgres y
+# Redis son gestionados (RDS / ElastiCache), no viven en el cluster.
+dependencies:
+  - name: postgresql
+    version: 18.11.6
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 28.2.3
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
