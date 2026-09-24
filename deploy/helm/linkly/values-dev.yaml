@@ -4,12 +4,11 @@
 api:
   image:
     repository: ghcr.io/ernestojim/linkly-api
-    tag: 5bfce39
+    tag: "3606323"
 worker:
   image:
     repository: ghcr.io/ernestojim/linkly-worker
-    tag: 5bfce39
-
+    tag: "3606323"
 # Postgres real (RDS) y cola real (SQS) — no viven en el cluster, así que
 # postgresql.enabled / redis.enabled / elasticmq.enabled se quedan en
 # `false` (el default de values.yaml). Los provisiona infra/envs/dev
@@ -29,12 +28,10 @@ worker:
 # plano en este archivo.
 ingress:
   host: dev.linkly.example.com
-
 env:
   AWS_REGION: eu-west-1
   AWS_ENDPOINT_URL: ""
   BASE_URL: https://dev.linkly.example.com
-
 secretEnv:
   DATABASE_URL: "postgresql+psycopg://REPLACE_ME@REPLACE_ME.eu-west-1.rds.amazonaws.com:5432/linkly"
   REDIS_URL: "redis://REPLACE_ME.cache.amazonaws.com:6379/0"
